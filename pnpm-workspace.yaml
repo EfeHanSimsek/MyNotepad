@@ -1,0 +1,6 @@
+allowBuilds:
+  electron: true
+onlyBuiltDependencies:
+  - core-js
+  - electron
+  - esbuild
