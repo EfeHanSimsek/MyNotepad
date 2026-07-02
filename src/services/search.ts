@@ -35,6 +35,8 @@ export function searchNotes(state: AppState, query: string, sourceNotes = state.
   const folder = readOperator(normalized, "folder");
   const has = readOperator(normalized, "has");
   const is = readOperator(normalized, "is");
+  const created = readOperator(normalized, "created");
+  const updated = readOperator(normalized, "updated");
   const text = stripOperators(normalized);
 
   return sourceNotes
@@ -53,6 +55,8 @@ export function searchNotes(state: AppState, query: string, sourceNotes = state.
       if (is === "favorite" && !note.isFavorite) return false;
       if (is === "pinned" && !note.isPinned) return false;
       if (hasFlag(normalized, "is:archived") && !note.isArchived) return false;
+      if (created && !matchesDateOperator(note.createdAt, created)) return false;
+      if (updated && !matchesDateOperator(note.updatedAt, updated)) return false;
       if (!text) return true;
       return `${note.title} ${note.content}`.toLowerCase().includes(text);
     })
@@ -65,4 +69,19 @@ export function searchNotes(state: AppState, query: string, sourceNotes = state.
       return { note, score, highlights };
     })
     .sort((a, b) => b.score - a.score || b.note.updatedAt.localeCompare(a.note.updatedAt));
+}
+
+function matchesDateOperator(value: string, operator: string): boolean {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  const today = new Date();
+  const valueDay = date.toISOString().slice(0, 10);
+
+  if (operator === "today") return valueDay === today.toISOString().slice(0, 10);
+  if (operator === "week") {
+    const diff = today.getTime() - date.getTime();
+    return diff >= 0 && diff <= 7 * 86400000;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(operator)) return valueDay === operator;
+  return valueDay.startsWith(operator);
 }

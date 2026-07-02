@@ -1,8 +1,6 @@
 const { app, BrowserWindow, Menu, shell } = require("electron");
 const path = require("node:path");
 
-const isDev = process.env.VITE_DEV_SERVER_URL || process.env.NODE_ENV === "development";
-
 function createMainWindow() {
   const window = new BrowserWindow({
     width: 1440,
@@ -18,7 +16,8 @@ function createMainWindow() {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: true,
+      webSecurity: true
     }
   });
 
@@ -31,9 +30,16 @@ function createMainWindow() {
     return { action: "deny" };
   });
 
+  window.webContents.on("will-navigate", (event, url) => {
+    const currentUrl = window.webContents.getURL();
+    if (currentUrl && url !== currentUrl && /^https?:\/\//i.test(url)) {
+      event.preventDefault();
+      shell.openExternal(url);
+    }
+  });
+
   if (process.env.VITE_DEV_SERVER_URL) {
     window.loadURL(process.env.VITE_DEV_SERVER_URL);
-    window.webContents.openDevTools({ mode: "detach" });
   } else {
     window.loadFile(path.join(__dirname, "..", "dist", "index.html"));
   }

@@ -45,6 +45,10 @@ import { buildGraph } from "./services/graph";
 import { extractBacklinks, extractTitle, getReadingStats, insertMarkdownCommand, renderMarkdown } from "./services/markdown";
 import { searchNotes } from "./services/search";
 import { validateUpload } from "./services/security";
+import { NotificationPanel } from "./components/notifications/NotificationPanel";
+import { CommandPalette } from "./components/command/CommandPalette";
+import { Sidebar } from "./components/layout/Sidebar";
+import { TopBar } from "./components/layout/TopBar";
 
 const navItems: Array<{ key: ViewKey; label: string; icon: typeof LayoutDashboard }> = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -165,81 +169,38 @@ export function App() {
 
   return (
     <div className="app-shell">
-      <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
-        <div className="brand">
-          <div className="brand-mark">A</div>
-          <div>
-            <strong>Atlas Notes</strong>
-            <span>Local-first workspace</span>
-          </div>
-          <button className="icon-button mobile-only" onClick={() => setSidebarOpen(false)} aria-label="Menüyü kapat">
-            <X size={18} />
-          </button>
-        </div>
-
-        <button className="primary-action" onClick={() => handleCreateNote()}>
-          <Plus size={18} /> Yeni not
-        </button>
-
-        <nav className="nav-list">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.key}
-                className={view === item.key ? "active" : ""}
-                onClick={() => {
-                  setView(item.key);
-                  setSidebarOpen(false);
-                }}
-              >
-                <Icon size={17} />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-
-        <div className="sidebar-footer">
-          <div className="sync-pill">
-            <span className={`status-dot ${syncStatus}`} />
-            {syncStatus === "saving" ? "Kaydediliyor" : syncStatus === "error" ? "Sync hatası" : "Kaydedildi"}
-          </div>
-          <div className="profile-chip">
-            <div>{state.user.avatar}</div>
-            <span>{state.user.name}</span>
-          </div>
-        </div>
-      </aside>
+      <Sidebar
+        open={sidebarOpen}
+        navItems={navItems}
+        activeView={view}
+        user={state.user}
+        syncStatus={syncStatus}
+        onClose={() => setSidebarOpen(false)}
+        onCreateNote={() => handleCreateNote()}
+        onSelectView={setView}
+      />
 
       <main className="workspace">
-        <header className="topbar">
-          <button className="icon-button mobile-only" onClick={() => setSidebarOpen(true)} aria-label="Menüyü aç">
-            <Menu size={19} />
-          </button>
-          <div className="search-box">
-            <Search size={18} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ara: tag:ürün has:task is:pinned" />
-          </div>
-          <button className="ghost-button" onClick={() => setCommandOpen(true)}>
-            <Sparkles size={17} /> Komut
-          </button>
-          <button className="icon-button" onClick={() => setTheme(state.settings.theme === "dark" ? "light" : "dark")} aria-label="Tema değiştir">
-            {resolveTheme(state.settings.theme) === "dark" ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
-          <button className="icon-button" onClick={() => setNotificationsOpen((open) => !open)} aria-label="Bildirimler">
-            <Bell size={18} />
-            {state.notifications.some((item) => !item.read) && <span className="badge-dot" />}
-          </button>
+        <TopBar
+          query={query}
+          theme={resolveTheme(state.settings.theme)}
+          hasUnreadNotifications={state.notifications.some((item) => !item.read)}
+          onQueryChange={setQuery}
+          onOpenSidebar={() => setSidebarOpen(true)}
+          onOpenCommand={() => setCommandOpen(true)}
+          onToggleTheme={() => setTheme(state.settings.theme === "dark" ? "light" : "dark")}
+          onToggleNotifications={() => setNotificationsOpen((open) => !open)}
+        >
           {notificationsOpen && (
             <NotificationPanel
               state={state}
               markRead={store.markNotificationRead}
               markAllRead={store.markAllNotificationsRead}
               close={() => setNotificationsOpen(false)}
+              formatDate={formatDate}
             />
           )}
-        </header>
+        </TopBar>
 
         {view === "dashboard" ? (
           <Dashboard state={state} setView={setView} handleCreateNote={handleCreateNote} />
@@ -305,26 +266,14 @@ export function App() {
       </main>
 
       {commandOpen && (
-        <div className="modal-backdrop" onClick={() => setCommandOpen(false)}>
-          <div className="command-palette" onClick={(event) => event.stopPropagation()}>
-            <div className="command-input">
-              <Search size={18} />
-              <input autoFocus placeholder="Komut veya not ara" onChange={(event) => setQuery(event.target.value)} />
-            </div>
-            <button onClick={() => handleCreateNote()}>
-              <Plus size={17} /> Yeni not oluştur
-            </button>
-            <button onClick={() => setView("tasks")}>
-              <CheckSquare size={17} /> Görevleri aç
-            </button>
-            <button onClick={() => setView("graph")}>
-              <Network size={17} /> Bilgi grafiğine git
-            </button>
-            <button onClick={() => selectedNote && exportNoteMarkdown(selectedNote)}>
-              <Download size={17} /> Seçili notu Markdown indir
-            </button>
-          </div>
-        </div>
+        <CommandPalette
+          selectedNote={selectedNote}
+          setQuery={setQuery}
+          createNote={() => handleCreateNote()}
+          setView={setView}
+          exportMarkdown={exportNoteMarkdown}
+          close={() => setCommandOpen(false)}
+        />
       )}
 
       {toast && <div className="toast">{toast}</div>}
@@ -580,42 +529,6 @@ function SettingsPanel({ state, updateSettings, setTheme, resetDemo, exportAll }
         </div>
       </div>
     </section>
-  );
-}
-
-function NotificationPanel({
-  state,
-  markRead,
-  markAllRead,
-  close
-}: {
-  state: ReturnType<typeof useAppStore>["state"];
-  markRead: (notificationId: string) => void;
-  markAllRead: () => void;
-  close: () => void;
-}) {
-  return (
-    <div className="notification-popover">
-      <div className="popover-header">
-        <strong>Bildirimler</strong>
-        <button className="ghost-button" onClick={markAllRead}>Tümünü okundu yap</button>
-      </div>
-      {state.notifications.length === 0 && <div className="empty-state">Bildirim yok.</div>}
-      {state.notifications.map((notification) => (
-        <button
-          key={notification.id}
-          className={`notification-item ${notification.read ? "" : "unread"}`}
-          onClick={() => {
-            markRead(notification.id);
-            close();
-          }}
-        >
-          <span>{notification.title}</span>
-          <small>{notification.body}</small>
-          <em>{formatDate(notification.createdAt)}</em>
-        </button>
-      ))}
-    </div>
   );
 }
 

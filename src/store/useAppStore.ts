@@ -1,21 +1,43 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createVersion, seedState } from "../domain/seed";
 import type { AppState, Attachment, CanvasEdge, CanvasNode, Folder, Note, Tag, Task, ThemeMode } from "../domain/types";
+import { createEnvelope, LEGACY_STORAGE_KEYS, migrateEnvelope, STORAGE_KEY } from "../services/storage/migrations";
+import { createLocalStorageAdapter } from "../services/storage/localStorageAdapter";
+import { StorageReadError } from "../services/storage/types";
 
-const STORAGE_KEY = "atlas-notes-state-v1";
+const storage = createLocalStorageAdapter<AppState>(STORAGE_KEY);
+const corruptedStorageKey = "atlas-notes-corrupted-backup";
 
 function loadState(): AppState {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  const legacyRaw = LEGACY_STORAGE_KEYS.map((key) => localStorage.getItem(key)).find(Boolean);
+  const source = raw ?? legacyRaw;
+  if (!source) return seedState;
+
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return seedState;
-    return { ...seedState, ...JSON.parse(raw) } as AppState;
+    const parsed = JSON.parse(source);
+    return migrateEnvelope(parsed);
   } catch {
-    return seedState;
+    localStorage.setItem(corruptedStorageKey, source);
+    return {
+      ...seedState,
+      notifications: [
+        {
+          id: crypto.randomUUID(),
+          type: "sync",
+          title: "Veri kurtarma gerekli",
+          body: "Yerel kayıt bozuk görünüyor. Bozuk veri yedeklendi ve demo veriyle açıldı.",
+          read: false,
+          createdAt: new Date().toISOString()
+        },
+        ...seedState.notifications
+      ]
+    };
   }
 }
 
-function persistState(state: AppState) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+async function persistState(state: AppState) {
+  await storage.write(createEnvelope(state));
 }
 
 export function useAppStore() {
@@ -25,12 +47,15 @@ export function useAppStore() {
   useEffect(() => {
     setSyncStatus("saving");
     const handle = window.setTimeout(() => {
-      try {
-        persistState({ ...state, lastSyncAt: new Date().toISOString() });
+      persistState({ ...state, lastSyncAt: new Date().toISOString() }).then(() => {
         setSyncStatus("saved");
-      } catch {
+      }).catch((error) => {
+        if (error instanceof StorageReadError) {
+          setSyncStatus("error");
+          return;
+        }
         setSyncStatus("error");
-      }
+      });
     }, state.settings.autosaveMs);
     return () => window.clearTimeout(handle);
   }, [state]);
@@ -432,8 +457,11 @@ export function useAppStore() {
 
   const resetDemo = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
+    LEGACY_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
     setState(seedState);
   }, []);
+
+  const recoverCorruptedData = useCallback(() => localStorage.getItem(corruptedStorageKey), []);
 
   return {
     state,
@@ -460,6 +488,7 @@ export function useAppStore() {
     addAttachment,
     setTheme,
     updateSettings,
-    resetDemo
+    resetDemo,
+    recoverCorruptedData
   };
 }

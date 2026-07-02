@@ -10,7 +10,19 @@ export function renderMarkdown(markdown: string): string {
   const html = marked.parse(markdown.replace(/::callout\s(.+)\n([\s\S]*?)::/g, "<aside class=\"callout\"><strong>$1</strong><p>$2</p></aside>"), {
     async: false
   });
-  return DOMPurify.sanitize(html);
+  const sanitized = DOMPurify.sanitize(html, {
+    ADD_ATTR: ["target", "rel"]
+  });
+  const template = document.createElement("template");
+  template.innerHTML = sanitized;
+  template.content.querySelectorAll("a[href]").forEach((anchor) => {
+    const href = anchor.getAttribute("href") ?? "";
+    if (/^https?:\/\//i.test(href)) {
+      anchor.setAttribute("target", "_blank");
+      anchor.setAttribute("rel", "noopener noreferrer");
+    }
+  });
+  return template.innerHTML;
 }
 
 export function extractTitle(content: string): string {
